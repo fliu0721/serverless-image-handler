@@ -21,7 +21,7 @@ import {
 export class ImageHandler {
   private readonly LAMBDA_PAYLOAD_LIMIT = 6 * 1024 * 1024;
 
-  constructor(private readonly s3Client: S3, private readonly rekognitionClient: Rekognition) {}
+  constructor(private readonly s3Client: S3, private readonly rekognitionClient: Rekognition, private readonly host: string) {}
 
   /**
    * Creates a Sharp object from Buffer
@@ -75,6 +75,8 @@ export class ImageHandler {
    */
   async process(imageRequestInfo: ImageRequestInfo): Promise<string> {
     const { originalImage, edits } = imageRequestInfo;
+    let bucket = imageRequestInfo.bucket;
+    let key = imageRequestInfo.key;
     const options = { failOnError: false, animated: imageRequestInfo.contentType === ContentTypes.GIF };
     let base64EncodedImage = "";
 
@@ -104,12 +106,28 @@ export class ImageHandler {
 
     // binary data need to be base64 encoded to pass to the API Gateway proxy https://docs.aws.amazon.com/apigateway/latest/developerguide/lambda-proxy-binary-media.html.
     // checks whether base64 encoded image fits in 6M limit, see https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html.
+    console.info("cotti->base64EncodedImage size: " + base64EncodedImage.length)
     if (base64EncodedImage.length > this.LAMBDA_PAYLOAD_LIMIT) {
-      throw new ImageHandlerError(
-        StatusCodes.REQUEST_TOO_LONG,
-        "TooLargeImageException",
-        "The converted image is too large to return."
-      );
+      console.info("cotti->host:" + this.host + ",bucket:" + bucket + ",key:" + key);
+      await this.s3Client.putObject({
+        Bucket: bucket,
+        Key: 'large/fe9d5bf649fb77adb54e964c204ef01c/' + key,
+        Body: Buffer.from(base64EncodedImage, 'base64'),
+        ContentType: imageRequestInfo.contentType
+      }).promise();
+
+      throw {
+        status: 302,
+        code: 'TooLargeImageException',
+        redirectUrl: 'https://' + this.host + '/large/' + key,
+        message: 'The converted image is too large to return. You can still get the image from the redirect URL.'
+      }
+
+      // throw new ImageHandlerError(
+      //   StatusCodes.REQUEST_TOO_LONG,
+      //   "TooLargeImageException",
+      //   "The converted image is too large to return."
+      // );
     }
 
     return base64EncodedImage;

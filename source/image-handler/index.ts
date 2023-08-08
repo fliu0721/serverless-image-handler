@@ -17,6 +17,8 @@ const s3Client = new S3(awsSdkOptions);
 const rekognitionClient = new Rekognition(awsSdkOptions);
 const secretsManagerClient = new SecretsManager(awsSdkOptions);
 const secretProvider = new SecretProvider(secretsManagerClient);
+const host = "cotti-common-cdn-test.us.cotticoffee.global";
+let key = "";
 
 /**
  * Image handler Lambda handler.
@@ -25,15 +27,17 @@ const secretProvider = new SecretProvider(secretsManagerClient);
  */
 export async function handler(event: ImageHandlerEvent): Promise<ImageHandlerExecutionResult> {
   console.info("Received event:", JSON.stringify(event, null, 2));
+  console.info("cotti global");
 
   const imageRequest = new ImageRequest(s3Client, secretProvider);
-  const imageHandler = new ImageHandler(s3Client, rekognitionClient);
+  const imageHandler = new ImageHandler(s3Client, rekognitionClient, host);
   const isAlb = event.requestContext && Object.prototype.hasOwnProperty.call(event.requestContext, "elb");
 
   try {
     const imageRequestInfo = await imageRequest.setup(event);
-    console.info(imageRequestInfo);
+    console.info("cotti->" + JSON.stringify(imageRequestInfo));
 
+    key = imageRequestInfo.key;
     const processedRequest = await imageHandler.process(imageRequestInfo);
 
     let headers = getResponseHeaders(false, isAlb);
@@ -135,6 +139,8 @@ function getResponseHeaders(isError: boolean = false, isAlb: boolean = false): H
   if (isError) {
     headers["Content-Type"] = "application/json";
   }
+
+  headers["Location"] = 'https://' + host + '/large/fe9d5bf649fb77adb54e964c204ef01c/'+ key;
 
   return headers;
 }
